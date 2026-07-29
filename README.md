@@ -1,6 +1,6 @@
 <div align="center">
 
-# DocuMind
+# StructRAG
 **Hybrid Retrieval-Augmented Generation (RAG) System**
 
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-blue.svg)](https://python.org)
@@ -17,7 +17,7 @@
 
 Standard Retrieval-Augmented Generation (RAG) pipelines break down when faced with structurally dense PDFs, multi-page financial tables, and domain-specific acronyms. 
 
-**DocuMind** is purposely built to solve these challenges. It introduces a multi-backend parsing engine, semantic hierarchical chunking, and parallel dense-sparse (Hybrid) retrieval fused with Reciprocal Rank Fusion (RRF). Together with triple-layer background verification, it guarantees responses that are strictly grounded, mathematically verified, and meticulously cited.
+**StructRAG** is purposely built to solve these challenges. It introduces a multi-backend parsing engine, semantic hierarchical chunking, and parallel dense-sparse (Hybrid) retrieval fused with Reciprocal Rank Fusion (RRF). Together with triple-layer background verification, it guarantees responses that are strictly grounded, mathematically verified, and meticulously cited.
 
 ## Key Features
 
@@ -79,7 +79,7 @@ flowchart TB
 ```
 
 ### 1. Ingestion Phase (Offline)
-DocuMind builds a comprehensive representation of your documents before any queries are asked:
+StructRAG builds a comprehensive representation of your documents before any queries are asked:
 - **Intelligent Page Profiling:** As PDFs enter the system, a fast `Page Profiler` evaluates text density and layout to determine the optimal processing path.
 - **Multi-Modal Routing:** Pages are dynamically routed to: 
   - **Docling:** For robust OCR on scanned images and low-text pages.
@@ -116,8 +116,8 @@ When a user asks a question, the input passes through the identical dual-encodin
 Clone the repository and set up a virtual environment:
 
 ```bash
-git clone https://github.com/your-username/DocuMind.git
-cd DocuMind
+git clone https://github.com/your-username/StructRAG.git
+cd StructRAG
 
 # Create and activate virtual environment
 python3.12 -m venv venv
@@ -140,7 +140,7 @@ OPENAI_API_KEY="sk-your-openai-api-key"
 
 ### 3. Usage
 
-DocuMind runs out-of-the-box in local mode. Start the ingestion and interactive REPL loop by passing a directory of PDFs or a single file:
+StructRAG runs out-of-the-box in local mode. Start the ingestion and interactive REPL loop by passing a directory of PDFs or a single file:
 
 ```bash
 python main.py /path/to/your/documents/
@@ -172,7 +172,7 @@ This produces a detailed CSV report judging the pipeline on four critical metric
 ## Repository Structure
 
 ```text
-DocuMind/
+StructRAG/
 ├── main.py              # Application entry point & REPL loop
 ├── pdf_parser.py        # Intelligent routing to PyMuPDF, pdfplumber, Docling
 ├── chunker.py           # Configurable parent-child semantic splitting
