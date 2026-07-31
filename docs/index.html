@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>StructRAG — Ask your documents</title>
+<meta name="description" content="Hybrid retrieval-augmented generation over structurally dense PDFs, with grounded citations and confidence scoring.">
+
+<!-- No inline scripts and no external hosts, so document text can never execute
+     as code. connect-src must match API_BASE in config.js — see DEPLOY.md. -->
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none';
+               script-src 'self';
+               style-src 'self';
+               img-src 'self' data:;
+               connect-src https://ivap10-structrag.hf.space;
+               base-uri 'none';
+               form-action 'none'">
+<meta name="referrer" content="no-referrer">
+
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📄</text></svg>">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">▤</span>
+    <span class="brand-name">StructRAG</span>
+  </div>
+  <div class="topbar-right">
+    <span id="quota" class="quota" hidden></span>
+    <button id="signout" class="btn-ghost" hidden>Sign out</button>
+  </div>
+</header>
+
+<!-- ── Gate: invite code ─────────────────────────────────────────────────── -->
+<main id="gate" class="gate">
+  <div class="gate-card">
+    <h1>Ask questions about your PDFs</h1>
+    <p class="lede">
+      StructRAG reads dense documents — financial filings, papers, reports —
+      and answers questions with the page it took each fact from.
+    </p>
+
+    <form id="gate-form" autocomplete="off">
+      <label for="invite">Invite code</label>
+      <input id="invite" name="invite" type="password" required
+             placeholder="Enter your invite code" autocomplete="off" spellcheck="false">
+      <button type="submit" class="btn-primary" id="gate-submit">Continue</button>
+    </form>
+
+    <p id="gate-error" class="error" role="alert" hidden></p>
+
+    <p class="fineprint">
+      This is a demo running on a personal API budget, so usage is capped.
+      Documents you upload are held only for your session and are discarded when
+      it expires.
+    </p>
+  </div>
+</main>
+
+<!-- ── App ───────────────────────────────────────────────────────────────── -->
+<div id="app" class="app" hidden>
+
+  <aside class="sidebar">
+    <h2>Documents</h2>
+
+    <div id="dropzone" class="dropzone" tabindex="0" role="button"
+         aria-label="Upload a PDF">
+      <input id="file-input" type="file" accept="application/pdf" hidden>
+      <span class="dropzone-icon" aria-hidden="true">↑</span>
+      <span class="dropzone-text">Drop a PDF here<br><span class="dim">or click to choose</span></span>
+      <span id="dropzone-limits" class="dropzone-limits"></span>
+    </div>
+
+    <ul id="doclist" class="doclist"></ul>
+    <p id="upload-error" class="error" role="alert" hidden></p>
+  </aside>
+
+  <main class="chat">
+    <div id="transcript" class="transcript" aria-live="polite">
+      <div class="empty-state" id="empty-state">
+        <p>Upload a document, then ask it something.</p>
+        <p class="dim">
+          Try: <em>“What was total revenue?”</em> ·
+          <em>“Summarise the risk factors.”</em>
+        </p>
+      </div>
+    </div>
+
+    <form id="ask-form" class="composer" autocomplete="off">
+      <textarea id="question" rows="1" placeholder="Ask a question about your documents…"
+                aria-label="Your question"></textarea>
+      <button type="submit" id="ask-submit" class="btn-primary" disabled>Ask</button>
+    </form>
+    <p id="composer-hint" class="composer-hint"></p>
+  </main>
+
+</div>
+
+<footer class="footer">
+  <a href="https://github.com/IvaP10/StructRAG">Source on GitHub</a>
+  <span class="dim">·</span>
+  <span class="dim">Answers are generated and may be wrong — check the cited pages.</span>
+</footer>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
