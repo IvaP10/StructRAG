@@ -4,8 +4,9 @@
 # init/analyze pair. ZAP lives in its own file because it attacks the live Space
 # on a different schedule. Everything else runs here.
 #
-# Every job uploads SARIF, so findings appear as code scanning alerts in the
-# Security tab. Nothing here opens a pull request.
+# Findings appear as code scanning alerts in the Security tab, except pip-audit,
+# which has no SARIF output format and reports into the job summary instead.
+# Nothing here opens a pull request.
 #
 # On "OWASP": OWASP Dependency-Check targets Java and .NET and finds essentially
 # nothing in a Python project. Real OWASP coverage for this stack is Semgrep's
@@ -206,21 +207,23 @@ jobs:
 
       - name: pip-audit
         if: always()
+        # pip-audit has no SARIF output format, so this one reports into the job
+        # summary rather than the Security tab. Python dependency CVEs still
+        # reach the Security tab through Trivy's filesystem scan above; this is
+        # a second opinion from a different advisory database.
+        #
         # Only requirements.txt. The OCR and eval extras are not installed in the
         # image or on the server, so a CVE in torch is not part of the deployed
         # attack surface and would only be noise.
         run: |
-          pip-audit --requirement requirements.txt \
-                    --format sarif --output pip-audit.sarif \
-                    --progress-spinner=off \
-          || echo "pip-audit reported findings; see the Security tab."
-
-      - name: Upload pip-audit results
-        if: always()
-        uses: github/codeql-action/upload-sarif@v4.37.3
-        with:
-          sarif_file: pip-audit.sarif
-          category: pip-audit
+          {
+            echo "## pip-audit"
+            echo
+            pip-audit --requirement requirements.txt \
+                      --format markdown \
+                      --progress-spinner=off \
+              || echo "_pip-audit reported findings or could not resolve; see the step log._"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # ── Tests and lint ─────────────────────────────────────────────────────────
   tests:

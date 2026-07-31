@@ -45,16 +45,18 @@ what is already known and accepted.
 
 ## How this project is monitored
 
-Every scanner reports into the Security tab as code scanning alerts. No scanner
-opens pull requests.
+Scanners report into the Security tab as code scanning alerts, except pip-audit,
+which has no SARIF output format and reports into its workflow run summary. No
+scanner opens pull requests.
 
-| Workflow | Tool | Looks for |
-|---|---|---|
-| [codeql.yml](.github/workflows/codeql.yml) | CodeQL | Dataflow bugs — injection, traversal, SSRF |
-| [security-scan.yml](.github/workflows/security-scan.yml) | Trivy | Dependency CVEs, image CVEs, Dockerfile misconfig |
-| [security-scan.yml](.github/workflows/security-scan.yml) | Gitleaks | Secrets, across the whole git history |
-| [security-scan.yml](.github/workflows/security-scan.yml) | Semgrep, Bandit, pip-audit | OWASP Top 10, Python security lint, dependency CVEs |
-| [zap.yml](.github/workflows/zap.yml) | OWASP ZAP | Runtime issues against the live API |
+| Workflow | Tool | Looks for | Reports to |
+|---|---|---|---|
+| [codeql.yml](.github/workflows/codeql.yml) | CodeQL | Dataflow bugs — injection, traversal, SSRF | Security tab |
+| [security-scan.yml](.github/workflows/security-scan.yml) | Trivy | Dependency CVEs, image CVEs, Dockerfile misconfig | Security tab |
+| [security-scan.yml](.github/workflows/security-scan.yml) | Gitleaks | Secrets, across the whole git history | Security tab |
+| [security-scan.yml](.github/workflows/security-scan.yml) | Semgrep, Bandit | OWASP Top 10, Python security lint | Security tab |
+| [security-scan.yml](.github/workflows/security-scan.yml) | pip-audit | Python dependency CVEs, second opinion to Trivy | Run summary |
+| [zap.yml](.github/workflows/zap.yml) | OWASP ZAP | Runtime issues against the live API | Security tab |
 
 Every two days, [vuln-triage.yml](.github/workflows/vuln-triage.yml) reads the
 open alerts, works out which are genuinely exploitable given the threat model,
