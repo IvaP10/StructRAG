@@ -1,0 +1,52 @@
+# Dependabot version updates.
+#
+# IMPORTANT — this file controls *version update* pull requests. It is separate
+# from Dependabot **security alerts**, which are a repository setting, not a file.
+#
+# To get the behaviour you want (flag vulnerabilities, do not open PRs):
+#
+#   Settings -> Code security and analysis
+#     Dependabot alerts .................. ENABLE   (flags CVEs in the Security tab)
+#     Dependabot security updates ........ DISABLE  (this is the PR-opener)
+#
+# With that combination, a vulnerable dependency shows up as an alert, the triage
+# agent picks it up on its next run, verifies whether it is actually reachable
+# from this code, and only then asks you to approve a fix.
+#
+# The schedules below are intentionally monthly and grouped: routine version
+# bumps are useful but should not generate weekly noise.
+
+version: 2
+
+updates:
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    groups:
+      # One PR for all routine bumps rather than one per package.
+      runtime:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    labels: ["dependencies"]
+    commit-message:
+      prefix: "deps"
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    labels: ["dependencies", "ci"]
+    commit-message:
+      prefix: "ci"
+
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 2
+    labels: ["dependencies", "docker"]
+    commit-message:
+      prefix: "docker"

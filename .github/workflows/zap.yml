@@ -1,0 +1,84 @@
+# OWASP ZAP — dynamic testing against the running API.
+#
+# The other scanners read code. This one attacks the deployed thing, which is
+# the only way to catch problems that only exist once it is running: a missing
+# security header, an endpoint that leaks a stack trace, CORS that is wider in
+# practice than the config suggests.
+#
+# Manual and weekly rather than per-push, because it fires real traffic at the
+# live Space and every request that gets through costs money.
+
+name: OWASP ZAP
+
+on:
+  schedule:
+    - cron: "33 7 * * 0"
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Base URL to scan (defaults to the SPACE_URL variable)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  baseline:
+    name: Baseline scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      security-events: write
+      contents: read
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve target
+        id: target
+        env:
+          INPUT_TARGET: ${{ inputs.target }}
+          # Repository variable, not a secret — the URL is public anyway.
+          # Set it under Settings -> Secrets and variables -> Actions -> Variables.
+          SPACE_URL: ${{ vars.SPACE_URL }}
+        run: |
+          url="${INPUT_TARGET:-$SPACE_URL}"
+          if [ -z "$url" ]; then
+            echo "::error::No target. Set the SPACE_URL repository variable to your Space URL."
+            exit 1
+          fi
+          echo "url=${url%/}" >> "$GITHUB_OUTPUT"
+
+      - name: Wake the Space
+        # Free Spaces sleep when idle and cold-start slowly. Without this the
+        # scan would report the whole API as unreachable.
+        run: |
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" "${{ steps.target.outputs.url }}/api/health" || true)
+            echo "attempt $attempt: HTTP $code"
+            if [ "$code" = "200" ] || [ "$code" = "503" ]; then
+              echo "Space is responding."
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "::warning::Space did not respond in time; the scan may report little."
+
+      - name: ZAP baseline
+        uses: zaproxy/action-baseline@v0.12.0
+        with:
+          target: ${{ steps.target.outputs.url }}
+          # Rules to downgrade or ignore, with reasons. Kept in the repo so the
+          # decisions are reviewable rather than buried in a UI.
+          rules_file_name: .zap/rules.tsv
+          # -j uses the AJAX spider too, so the SPA's own requests get exercised.
+          cmd_options: "-a -j"
+          # This workflow reports; it does not gate anything, so a medium-severity
+          # informational finding should not turn the run red.
+          fail_action: false
+          # The action opens a GitHub issue with its findings by default, which
+          # suits the flag-don't-PR preference.
+          issue_title: "OWASP ZAP baseline findings"
+          allow_issue_writing: true
