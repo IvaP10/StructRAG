@@ -8,6 +8,6 @@ qdrant-client
 openai
 sentence-transformers
 numpy
-protobuf<4
+protobuf<8
 datasets
 ragas
