@@ -1,0 +1,118 @@
+# Applies an approved security fix.
+#
+# Triggers only when the `approved-fix` label is added to a triage issue. That
+# label is the approval gate: this workflow does nothing until you add it.
+#
+# It applies the reviewed patch on a new branch, inverts the reproduction test so
+# it guards against regression, runs the full suite, and opens a pull request.
+# It never pushes to main, and the PR still needs your review.
+
+name: Apply approved fix
+
+on:
+  issues:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: "Triage issue number (must already carry the approved-fix label)"
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  # Per issue, so two labels added quickly cannot race on the same branch.
+  group: vuln-fix-${{ github.event.issue.number || inputs.issue }}
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    name: Apply fix and open a pull request
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    # Only runs for the approval label on an agent-filed issue.
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.label.name == 'approved-fix' &&
+       contains(github.event.issue.labels.*.name, 'security-triage'))
+
+    permissions:
+      contents: write         # push the fix branch
+      pull-requests: write    # open the PR
+      issues: write           # comment back on the issue
+      actions: read           # find the triage run holding the reproduction test
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          # Full history so `git apply --3way` has the blobs it needs to merge.
+          fetch-depth: 0
+          # Push with the job token; branch protection on main still applies, and
+          # GITHUB_TOKEN cannot modify .github/workflows/ without the workflow
+          # scope — a useful ceiling on what an agent-authored patch can reach.
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Locate the triage run holding the reproduction test
+        # This workflow is triggered by a label on an issue, so there is no
+        # github.event.workflow_run to read a run id from. Resolve the most
+        # recent successful triage run explicitly instead.
+        id: triage_run
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          id=$(gh run list --workflow=vuln-triage.yml --status=success \
+                 --limit 1 --json databaseId --jq '.[0].databaseId')
+          echo "Latest successful triage run: ${id:-none}"
+          echo "id=${id}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the reproduction test
+        # The triage run kept its generated tests as an artifact rather than
+        # committing them. Pull them back so the fix can invert one into a
+        # regression guard. Best effort: an alert with no reproduction still gets
+        # its patch applied.
+        continue-on-error: true
+        if: steps.triage_run.outputs.id != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: reproduction-tests
+          path: tests/security/
+          run-id: ${{ steps.triage_run.outputs.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Apply the fix
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_BASE_BRANCH: ${{ github.event.repository.default_branch || 'main' }}
+          INVITE_CODE: test-invite-code-1234
+          SESSION_SECRET: test-session-secret-value-32-chars
+          OPENAI_API_KEY: sk-test-not-a-real-key
+          LOG_FILE: ""
+        run: |
+          python -m security.apply_fix \
+            --issue "${{ github.event.issue.number || inputs.issue }}"
+
+      - name: Report failure on the issue
+        # apply_fix.py comments on the issue for the failures it anticipates
+        # (patch will not apply, tests fail). This catches anything it did not,
+        # so a silent crash does not leave you waiting for a PR that never comes.
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE: ${{ github.event.issue.number || inputs.issue }}
+        run: |
+          gh issue comment "$ISSUE" --body \
+            "The automated fix run failed unexpectedly. See [the logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}). \`main\` is untouched."
+          gh issue edit "$ISSUE" --remove-label approved-fix

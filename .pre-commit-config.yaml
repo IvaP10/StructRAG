@@ -1,0 +1,53 @@
+# Local guardrails that run before a commit is created, so a secret can never
+# leave your machine in the first place. CI catches leaks after the fact; this
+# catches them before.
+#
+# One-time setup:
+#   pip install pre-commit
+#   pre-commit install
+#
+# Run against everything already in the repo:
+#   pre-commit run --all-files
+
+repos:
+  # ── Secret detection ────────────────────────────────────────────────────────
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+
+  # ── Basic hygiene ───────────────────────────────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      # Refuses any file that looks like a private key.
+      - id: detect-private-key
+      # Blocks accidentally committing a large blob (e.g. a PDF corpus or a
+      # cached .npy embedding file).
+      - id: check-added-large-files
+        args: ["--maxkb=2048"]
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: check-json
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      # Warns if two files differ only by case — fine on a case-insensitive
+      # filesystem, broken on the Linux CI runners and in the image.
+      - id: check-case-conflict
+
+  # ── Python lint ─────────────────────────────────────────────────────────────
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+
+  # ── Python security lint ────────────────────────────────────────────────────
+  # Same tool CI runs, so findings surface locally first.
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.8.0
+    hooks:
+      - id: bandit
+        args: ["-c", "pyproject.toml"]
+        additional_dependencies: ["bandit[toml]"]
+        exclude: ^tests/

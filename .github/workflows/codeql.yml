@@ -1,0 +1,65 @@
+# CodeQL — GitHub's own dataflow analysis.
+#
+# Traces bugs across functions: user input reaching a dangerous sink, path
+# traversal, SSRF.
+#
+# Results land in the Security tab as code scanning alerts, never as pull
+# requests.
+
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly, so newly published queries run against unchanged code.
+    - cron: "27 3 * * 1"
+  workflow_dispatch:
+
+# Least privilege: read the code, write alerts, nothing else.
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze ${{ matrix.language }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      security-events: write   # required to upload results
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: python
+          # Covers docs/app.js, which handles server-controlled strings.
+          - language: javascript-typescript
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Initialise CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          # Lower-severity queries beyond the default set. Noisier, but the
+          # triage agent filters it.
+          queries: security-extended
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Analyse
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
