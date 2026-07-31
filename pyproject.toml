@@ -1,0 +1,87 @@
+[project]
+name = "structrag"
+version = "0.2.0"
+description = "Hybrid Retrieval-Augmented Generation over structurally dense PDFs"
+requires-python = ">=3.12"
+
+# ── Ruff ──────────────────────────────────────────────────────────────────────
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+exclude = [".cache", "venv", ".venv", "qdrant_storage"]
+
+[tool.ruff.lint]
+# Correctness and security only. Deliberately excludes the stylistic rule sets:
+#   I  (import sorting)     — would reorder imports in every original module
+#   UP (pyupgrade)          — would rewrite every typing.List into list
+# Both are fine changes in isolation, but applying them repo-wide would produce
+# a diff large enough to hide the actual security work, and neither finds a bug.
+# Add them later as a standalone cleanup if you want them.
+select = [
+    "F",    # pyflakes — real errors: undefined names, unused imports
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "B",    # bugbear — likely bugs, e.g. mutable default arguments
+    "S",    # bandit-equivalent security rules
+]
+ignore = [
+    "E501",   # line length; long comments and prompts are deliberate here
+    "E741",   # ambiguous variable names in pre-existing numeric code
+    "B008",   # FastAPI's Depends()/File() in defaults is the documented idiom
+    "B904",   # raise-from inside except; already used where it aids debugging
+    "W291",   # trailing whitespace  ─┐ cosmetic, and widespread in the original
+    "W293",   # whitespace-only line  ├─ modules. Fixing them repo-wide would
+    "W292",   # no newline at EOF    ─┘ touch ~100 lines for zero behaviour change.
+    "B905",   # zip() without strict=. See the note in the per-file section below.
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests use asserts, placeholder credentials, and a subprocess to re-import
+# config under `python -O`.
+"tests/**" = ["S101", "S105", "S106", "S404", "S603"]
+
+# main.py times how long module imports take, so the imports sit below a
+# timestamp assignment on purpose.
+"main.py" = ["E402"]
+
+# Best-effort cleanup before recreating a collection: if the delete fails the
+# create that follows is what matters, and it reports its own errors.
+"database.py" = ["S110"]
+
+# Pre-existing: a page whose extraction fails is skipped rather than failing the
+# whole document.
+"pdf_parser.py" = ["S110"]
+
+# Developer-run benchmark harness, not part of the serving path.
+"evaluate.py" = ["S110"]
+
+# Pre-existing dead code in the batching loop: an unused enumerate index and an
+# unused local. Harmless, and left alone so this security pass does not quietly
+# edit the embedding hot path.
+"embedder.py" = ["B007", "F841"]
+
+# NOTE on B905 (zip without strict=): retriever.py zips candidates against
+# scores in three places. Those lists are built to be the same length, but zip
+# would silently truncate if that ever stopped being true, hiding the bug rather
+# than raising. Worth adding strict=True as a separate change with its own test —
+# not silently, as part of a security pass.
+
+# ── Bandit ────────────────────────────────────────────────────────────────────
+[tool.bandit]
+exclude_dirs = ["tests", "venv", ".venv", ".cache", "qdrant_storage"]
+# B101 (assert_used) is noise outside of security-critical paths; we rely on
+# ruff's S101 in application code and allow asserts in tests.
+skips = ["B101"]
+
+# ── Pytest ────────────────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# The application modules sit at the repo root, not in a package directory.
+# Without this, pytest only puts tests/ on sys.path and every `import config`
+# fails.
+pythonpath = ["."]
+asyncio_mode = "auto"
+filterwarnings = ["ignore::DeprecationWarning"]
+markers = [
+    "security: reproduction tests written by the triage agent",
+]

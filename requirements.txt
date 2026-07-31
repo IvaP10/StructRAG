@@ -1,13 +1,34 @@
-pydantic
-tiktoken
-pymupdf
-pdfplumber
-docling
-python-dotenv
-qdrant-client
-openai
-sentence-transformers
-numpy
-protobuf<4
-datasets
-ragas
+# Runtime dependencies for the CLI and the hosted API.
+#
+# Deliberately slim. Docling (OCR) and the evaluation stack both pull in torch,
+# which turns a ~500 MB image into a ~4 GB one and makes cold starts on a free
+# Hugging Face Space painfully slow. Both stay optional, installed by hand when
+# wanted:
+#     pip install docling "protobuf<4"     # OCR for scanned PDFs
+#     pip install ragas datasets           # RAGAS benchmarking, for evaluate.py
+#
+# sentence-transformers was removed: retriever.py now calls an optional external
+# reranker over HTTP and embedder.py builds sparse vectors with a local
+# BM25-style tokeniser, so nothing imports it any more.
+
+# ── Core pipeline ─────────────────────────────────────────────────────────────
+pydantic>=2.7
+tiktoken>=0.7
+numpy>=1.26
+python-dotenv>=1.0
+
+# ── PDF parsing ───────────────────────────────────────────────────────────────
+pymupdf>=1.24
+pdfplumber>=0.11
+
+# ── Vector store ──────────────────────────────────────────────────────────────
+qdrant-client>=1.12
+
+# ── Models ────────────────────────────────────────────────────────────────────
+openai>=1.40
+
+# ── HTTP layer (server/ only; the CLI does not import these) ──────────────────
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9
+httpx>=0.27

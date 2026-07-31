@@ -1,4 +1,4 @@
-from typing import List, Dict, Optional, Set
+from typing import List, Dict, Optional
 import numpy as np
 import re
 import logging
@@ -117,7 +117,11 @@ class EnhancedEmbedder:
         self._ensure_openai()
         self._ensure_tiktoken()
 
-        if batch_size is None:
+        # Any falsy or nonsensical value falls back to the configured default.
+        # A bare `is None` check let `batch_size=False` through, which made the
+        # flush condition in _embed_with_openai always true and produced one API
+        # request per text instead of one per batch.
+        if not batch_size or batch_size < 1:
             batch_size = config.EMBEDDING_BATCH_SIZE
 
         target_dim = getattr(config, 'EMBEDDING_DIMENSION', None)

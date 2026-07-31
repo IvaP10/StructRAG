@@ -1,0 +1,43 @@
+# Keep the build context small and keep secrets out of image layers.
+# A file copied into an early layer stays in the image history even if a later
+# layer deletes it, so key.env must never enter the context at all.
+
+key.env
+.env
+.env.*
+*.pem
+*.key
+
+.git
+.github
+.claude
+docs/
+security/
+tests/
+
+.cache/
+qdrant_storage/
+uploads/
+*.log
+*.npy
+
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Not needed at runtime: OCR and eval extras are installed separately, if ever.
+requirements-ocr.txt
+requirements-eval.txt
+requirements-dev.txt
+evaluate.py
+
+README.md
+LICENSE
+*.md
+*.pdf
