@@ -1,0 +1,76 @@
+# Dependabot version updates.
+#
+# IMPORTANT — this file controls *version update* pull requests. It is separate
+# from Dependabot **security alerts**, which are a repository setting, not a file.
+#
+# For vulnerabilities, the setting that matters is:
+#
+#   Settings -> Code security and analysis
+#     Dependabot alerts .................. ENABLE   (flags CVEs in the Security tab)
+#     Dependabot security updates ........ DISABLE  (opens a PR per vulnerability)
+#
+# With that combination, a vulnerable dependency shows up as an alert, the triage
+# agent picks it up on its next run, verifies whether it is actually reachable
+# from this code, and only then asks you to approve a fix.
+#
+# Routine version bumps are a separate thing and are what this file does. It
+# opens PRs by design — monthly, and grouped so each ecosystem produces one PR
+# rather than one per package. Note that "monthly" schedules their first run
+# immediately, not a month from now.
+#
+# Every ecosystem sets a `cooldown`, so a release has to sit in the wild for a
+# few days before Dependabot proposes it. That window is what catches a
+# compromised or yanked release: the ones that get pulled are almost always
+# pulled within days of publication, and nothing here is urgent enough to want
+# a version that is hours old. Security alerts are unaffected — they are a
+# repository setting, not this file, and they are not delayed by cooldown.
+
+version: 2
+
+updates:
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    # One open PR per ecosystem, holding every bump for that ecosystem. Without
+    # a group covering all update-types, majors arrive as one PR each.
+    open-pull-requests-limit: 1
+    groups:
+      pip:
+        patterns: ["*"]
+        update-types: ["major", "minor", "patch"]
+    labels: ["dependencies"]
+    commit-message:
+      prefix: "deps"
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 1
+    groups:
+      actions:
+        patterns: ["*"]
+        update-types: ["major", "minor", "patch"]
+    labels: ["dependencies", "ci"]
+    commit-message:
+      prefix: "ci"
+
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 1
+    groups:
+      docker:
+        patterns: ["*"]
+        update-types: ["major", "minor", "patch"]
+    labels: ["dependencies", "docker"]
+    commit-message:
+      prefix: "docker"

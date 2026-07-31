@@ -1,0 +1,11 @@
+# Normalise line endings to LF. CI and the container run Linux; without this,
+# files committed with CRLF break shell scripts in the image and make diffs
+# unreadable.
+* text=auto eol=lf
+
+# Binary — never touch these.
+*.pdf   binary
+*.png   binary
+*.jpg   binary
+*.npy   binary
+*.ico   binary
