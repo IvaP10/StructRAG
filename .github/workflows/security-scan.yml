@@ -100,7 +100,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Scan the source tree
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -125,7 +125,7 @@ jobs:
       - name: Scan the image
         # Matters more than the source scan: most CVEs in a Python container come
         # from the Debian base layer, which requirements.txt says nothing about.
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: image
           image-ref: structrag:scan
@@ -145,7 +145,7 @@ jobs:
       - name: Fail only on a secret baked into the image
         # Different in kind from a CVE: a secret in a layer is compromised the
         # moment it ships, and removing it in a later layer does not erase it.
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: image
           image-ref: structrag:scan
@@ -179,7 +179,7 @@ jobs:
             --config=p/python \
             --config=p/secrets \
             --sarif --output=semgrep.sarif \
-            --metrics=off --error=false .
+            --metrics=off --no-error .
 
       - name: Upload Semgrep results
         if: always()
@@ -189,6 +189,10 @@ jobs:
           category: semgrep
 
       - name: Bandit
+        # always(): each scanner is independent, so one failing must not skip the
+        # rest of the job and leave their uploads looking for a file that was
+        # never written.
+        if: always()
         # Config comes from pyproject.toml, so pre-commit locally and CI here see
         # exactly the same findings and exclusions.
         run: bandit -c pyproject.toml -r . --format sarif --output bandit.sarif --exit-zero
@@ -201,6 +205,7 @@ jobs:
           category: bandit
 
       - name: pip-audit
+        if: always()
         # Only requirements.txt. The OCR and eval extras are not installed in the
         # image or on the server, so a CVE in torch is not part of the deployed
         # attack surface and would only be noise.

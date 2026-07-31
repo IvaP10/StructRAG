@@ -3,18 +3,20 @@
 # IMPORTANT — this file controls *version update* pull requests. It is separate
 # from Dependabot **security alerts**, which are a repository setting, not a file.
 #
-# To get the behaviour you want (flag vulnerabilities, do not open PRs):
+# For vulnerabilities, the setting that matters is:
 #
 #   Settings -> Code security and analysis
 #     Dependabot alerts .................. ENABLE   (flags CVEs in the Security tab)
-#     Dependabot security updates ........ DISABLE  (this is the PR-opener)
+#     Dependabot security updates ........ DISABLE  (opens a PR per vulnerability)
 #
 # With that combination, a vulnerable dependency shows up as an alert, the triage
 # agent picks it up on its next run, verifies whether it is actually reachable
 # from this code, and only then asks you to approve a fix.
 #
-# The schedules below are intentionally monthly and grouped: routine version
-# bumps are useful but should not generate weekly noise.
+# Routine version bumps are a separate thing and are what this file does. It
+# opens PRs by design — monthly, and grouped so each ecosystem produces one PR
+# rather than one per package. Note that "monthly" schedules their first run
+# immediately, not a month from now.
 
 version: 2
 
@@ -23,12 +25,13 @@ updates:
     directory: "/"
     schedule:
       interval: monthly
-    open-pull-requests-limit: 3
+    # One open PR per ecosystem, holding every bump for that ecosystem. Without
+    # a group covering all update-types, majors arrive as one PR each.
+    open-pull-requests-limit: 1
     groups:
-      # One PR for all routine bumps rather than one per package.
-      runtime:
+      pip:
         patterns: ["*"]
-        update-types: ["minor", "patch"]
+        update-types: ["major", "minor", "patch"]
     labels: ["dependencies"]
     commit-message:
       prefix: "deps"
@@ -37,7 +40,11 @@ updates:
     directory: "/"
     schedule:
       interval: monthly
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 1
+    groups:
+      actions:
+        patterns: ["*"]
+        update-types: ["major", "minor", "patch"]
     labels: ["dependencies", "ci"]
     commit-message:
       prefix: "ci"
@@ -46,7 +53,11 @@ updates:
     directory: "/"
     schedule:
       interval: monthly
-    open-pull-requests-limit: 2
+    open-pull-requests-limit: 1
+    groups:
+      docker:
+        patterns: ["*"]
+        update-types: ["major", "minor", "patch"]
     labels: ["dependencies", "docker"]
     commit-message:
       prefix: "docker"
