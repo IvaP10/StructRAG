@@ -282,7 +282,7 @@ class PDFPlumberExtractor:
         for bb in table_bbs:
             try:
                 cropped = cropped.outside_bbox(bb)
-            except Exception:
+            except Exception:  # nosec B110 - a bbox that will not crop is skipped, not fatal
                 pass
 
         raw = cropped.extract_text(x_tolerance=3, y_tolerance=3) or ""

@@ -2,7 +2,7 @@ from typing import List, Dict, Any
 from uuid import uuid4
 import tiktoken
 import re
-from models import Chunk, ChunkType, FormatType
+from models import Chunk, ChunkType
 from pdf_parser import LayoutElement
 import config
 import logging

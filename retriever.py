@@ -41,13 +41,19 @@ class EnhancedRetriever:
             return 0.4, 0.6
         return config.DENSE_WEIGHT, config.SPARSE_WEIGHT
 
-    async def retrieve_context(self, query: str, chunks_metadata: List[Dict[str, Any]], document_id: Optional[UUID] = None) -> Dict[str, Any]:
+    async def retrieve_context(
+        self,
+        query: str,
+        chunks_metadata: List[Dict[str, Any]],
+        document_id: Optional[UUID] = None,
+        session_id: Optional[str] = None
+    ) -> Dict[str, Any]:
         start_time = time.time()
         exp = config.MODE
 
         query_numbers = self._extract_query_numbers(query)
 
-        candidates = await self._hybrid_search(query, document_id)
+        candidates = await self._hybrid_search(query, document_id, session_id)
 
         if not candidates:
             return self._empty_context()
@@ -59,13 +65,31 @@ class EnhancedRetriever:
 
         candidates, rerank_scores = self._adaptive_rerank_filter(candidates, rerank_scores)
 
+        # Absolute relevance floor. _adaptive_rerank_filter is relative — it
+        # keeps the best of whatever it was given, so a query with no genuine
+        # match still yields chunks. This gate is what lets an off-topic
+        # question ("write me a Python script") be refused before any LLM call
+        # is made, which is both the cheapest and the most reliable guard
+        # against the hosted app being used as a general-purpose chatbot.
+        candidates, rerank_scores = self._absolute_relevance_gate(candidates, rerank_scores)
+        if not candidates:
+            ctx = self._empty_context()
+            ctx["metrics"]["rejected_by_relevance_gate"] = True
+            ctx["metrics"]["retrieval_time_ms"] = (time.time() - start_time) * 1000
+            return ctx
+
         candidates = self._deduplicate_fast(candidates, exp["dedup_threshold"])
 
         context_data = self._build_context(candidates, chunks_metadata, rerank_scores[:len(candidates)])
         context_data["metrics"]["retrieval_time_ms"] = (time.time() - start_time) * 1000
         return context_data
 
-    async def _hybrid_search(self, query: str, document_id: Optional[UUID] = None) -> List[Dict[str, Any]]:
+    async def _hybrid_search(
+        self,
+        query: str,
+        document_id: Optional[UUID] = None,
+        session_id: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
         dense_w, sparse_w = self._get_adaptive_weights(query)
 
         dense_emb, sparse_vec = await asyncio.gather(
@@ -74,8 +98,12 @@ class EnhancedRetriever:
         )
 
         dense_res, sparse_res = await asyncio.gather(
-            asyncio.to_thread(vector_db.dense_search, document_id, dense_emb, config.TOP_K_INITIAL),
-            asyncio.to_thread(vector_db.sparse_search, document_id, sparse_vec, config.TOP_K_INITIAL)
+            asyncio.to_thread(
+                vector_db.dense_search, document_id, dense_emb, config.TOP_K_INITIAL, session_id
+            ),
+            asyncio.to_thread(
+                vector_db.sparse_search, document_id, sparse_vec, config.TOP_K_INITIAL, session_id
+            )
         )
 
         return self._fuse_results(dense_res, sparse_res, dense_w, sparse_w)
@@ -88,17 +116,50 @@ class EnhancedRetriever:
         for rank, r in enumerate(dense, 1):
             cid = r["chunk_id"]
             scores[cid] = scores.get(cid, 0.0) + dw / (k + rank)
+            # Preserve the raw cosine similarity before RRF overwrites "score".
+            # RRF is rank-based, so its output says nothing about whether a
+            # chunk is actually relevant — the top hit of a hopeless query
+            # scores the same as the top hit of a perfect one. The cosine
+            # similarity is an absolute measure, and it is what
+            # _absolute_relevance_gate needs.
+            r["dense_score"] = r.get("score", 0.0)
             pool[cid] = r
 
         for rank, r in enumerate(sparse, 1):
             cid = r["chunk_id"]
             scores[cid] = scores.get(cid, 0.0) + sw / (k + rank)
+            r.setdefault("dense_score", 0.0)
             pool.setdefault(cid, r)
 
         ranked = sorted(scores, key=lambda x: scores[x], reverse=True)
         for cid in ranked:
             pool[cid]["score"] = scores[cid]
         return [pool[cid] for cid in ranked]
+
+    def _absolute_relevance_gate(
+        self, candidates: List[Dict], scores: List[float]
+    ) -> Tuple[List[Dict], List[float]]:
+        """Reject the whole result set when nothing is genuinely on-topic.
+
+        Uses dense cosine similarity rather than the rerank/RRF score because
+        cosine is comparable across queries. With normalized embeddings,
+        unrelated text lands around 0.0-0.15 and related text around 0.3-0.6,
+        so config.RELEVANCE_FLOOR sits between those bands.
+        """
+        floor = getattr(config, "RELEVANCE_FLOOR", 0.0)
+        if floor <= 0 or not candidates:
+            return candidates, scores
+
+        best = max((c.get("dense_score", 0.0) for c in candidates), default=0.0)
+
+        if config.LOG_RETRIEVAL_SCORES:
+            logger.info(f"Relevance gate: best dense cosine {best:.4f} vs floor {floor:.4f}")
+
+        if best < floor:
+            logger.info(f"Query rejected by relevance gate (best {best:.4f} < floor {floor:.4f})")
+            return [], []
+
+        return candidates, scores
 
     def _boost_numeric_matches(self, candidates: List[Dict], query_numbers: List[str], chunks_metadata: List[Dict]) -> List[Dict]:
         meta_map = {c["id"]: c for c in chunks_metadata}
@@ -139,9 +200,20 @@ class EnhancedRetriever:
                 # Fallback to initial sparse/dense scores
                 scores = [c.get("score", 0.0) for c in candidates]
                 
-        for c, s in zip(candidates, scores):
+        # The reranker is an external service, so its response length is not
+        # guaranteed. A short list would leave later candidates without a
+        # rerank_score and the sort below would raise KeyError, so fall back to
+        # the fusion scores instead.
+        if len(scores) != len(candidates):
+            logger.warning(
+                f"Reranker returned {len(scores)} scores for {len(candidates)} candidates; "
+                "using fusion scores instead."
+            )
+            scores = [c.get("score", 0.0) for c in candidates]
+
+        for c, s in zip(candidates, scores, strict=True):
             c["rerank_score"] = float(s)
-            
+
         sorted_cands = sorted(candidates, key=lambda x: x["rerank_score"], reverse=True)[:top_k]
         return sorted_cands, [c["rerank_score"] for c in sorted_cands]
 
@@ -151,10 +223,13 @@ class EnhancedRetriever:
         mean = np.mean(scores)
         std = np.std(scores)
         threshold = mean - 0.5 * std
-        filtered = [(c, s) for c, s in zip(candidates, scores) if s >= threshold]
+        # strict=True: these two lists are built together and must stay aligned.
+        # Without it a length mismatch would silently drop candidates instead of
+        # failing.
+        filtered = [(c, s) for c, s in zip(candidates, scores, strict=True) if s >= threshold]
         if len(filtered) < 3:
             return candidates[:5], scores[:5]
-        fc, fs = zip(*filtered)
+        fc, fs = zip(*filtered, strict=True)
         return list(fc), list(fs)
 
     def _deduplicate_fast(self, candidates: List[Dict], threshold: float) -> List[Dict]:

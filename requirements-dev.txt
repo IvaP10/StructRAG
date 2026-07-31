@@ -1,0 +1,17 @@
+# Development and CI tooling.
+#
+#   pip install -r requirements.txt -r requirements-dev.txt
+
+# ── Tests ─────────────────────────────────────────────────────────────────────
+pytest>=8.3
+pytest-asyncio>=0.24
+# Exercises the FastAPI app in-process without binding a port.
+httpx>=0.27
+
+# ── Lint / static analysis (same versions CI runs) ────────────────────────────
+ruff>=0.8
+bandit[toml]>=1.8
+pip-audit>=2.7
+
+# ── Local secret scanning ─────────────────────────────────────────────────────
+pre-commit>=4.0

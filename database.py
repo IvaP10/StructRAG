@@ -8,7 +8,8 @@ from qdrant_client.models import (
     Filter,
     FieldCondition,
     MatchValue,
-    SparseVector
+    SparseVector,
+    PayloadSchemaType
 )
 from typing import List, Dict, Any, Optional
 from uuid import UUID
@@ -16,7 +17,6 @@ import numpy as np
 import config
 from models import Chunk
 import logging
-import sys
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +24,12 @@ logger = logging.getLogger(__name__)
 class EnhancedVectorDatabase:
     
     def __init__(self):
-        if config.QDRANT_API_KEY:
+        if config.QDRANT_PATH:
+            # Embedded mode: no server process, storage is a local directory.
+            # Checked first so it wins over any stale host/port left in the env.
+            logger.info(f"Qdrant embedded at {config.QDRANT_PATH}")
+            self.client = QdrantClient(path=config.QDRANT_PATH)
+        elif config.QDRANT_API_KEY:
             self.client = QdrantClient(
                 url=f"https://{config.QDRANT_HOST}",
                 api_key=config.QDRANT_API_KEY
@@ -35,7 +40,8 @@ class EnhancedVectorDatabase:
                 port=config.QDRANT_PORT,
                 timeout=60
             )
-        
+
+
         self.collection_name = config.QDRANT_COLLECTION
         self.embedding_dimension = config.EMBEDDING_DIMENSION
         
@@ -59,13 +65,13 @@ class EnhancedVectorDatabase:
                             self.client.delete_collection(self.collection_name)
                             import time
                             time.sleep(1.0)
-                        except Exception:
+                        except Exception:  # nosec B110 - best effort; the create below reports real failures
                             pass
                         self._create_collection()
                     else:
                         raise
                 
-        except Exception as e:
+        except Exception:
             raise
 
     def reset_collection(self):
@@ -73,7 +79,7 @@ class EnhancedVectorDatabase:
             self.client.delete_collection(self.collection_name)
             import time
             time.sleep(1.0)
-        except Exception:
+        except Exception:  # nosec B110 - nothing to delete on a fresh collection
             pass
         self._create_collection()
     
@@ -95,6 +101,24 @@ class EnhancedVectorDatabase:
                 )
             }
         )
+        self._create_payload_indexes()
+
+    def _create_payload_indexes(self):
+        """Index the fields we filter on.
+
+        Without these, Qdrant falls back to a full scan for every filtered
+        search, which gets slow as sessions accumulate in the shared collection.
+        """
+        for field in ("session_id", "document_id"):
+            try:
+                self.client.create_payload_index(
+                    collection_name=self.collection_name,
+                    field_name=field,
+                    field_schema=PayloadSchemaType.KEYWORD
+                )
+            except Exception as e:
+                # Non-fatal: searches still work, just unindexed.
+                logger.warning(f"Could not create payload index on '{field}': {e}")
     
     def index_chunks(
         self,
@@ -160,6 +184,10 @@ class EnhancedVectorDatabase:
             payload={
                 "chunk_id": str(chunk.id),
                 "document_id": str(chunk.document_id),
+                # Stamped into chunk.metadata by the caller before indexing, the
+                # same way source_filename is. Absent in single-user CLI mode,
+                # where there is nothing to isolate.
+                "session_id": chunk.metadata.get("session_id"),
                 "parent_id": str(chunk.parent_id) if chunk.parent_id else None,
                 "text": chunk.text,
                 "chunk_type": chunk.chunk_type.value,
@@ -218,10 +246,11 @@ class EnhancedVectorDatabase:
     def _build_filter(
         self,
         document_id: Optional[UUID] = None,
-        metadata_filter: Optional[Dict[str, Any]] = None
+        metadata_filter: Optional[Dict[str, Any]] = None,
+        session_id: Optional[str] = None
     ) -> Optional[Filter]:
         conditions = []
-        
+
         if document_id is not None:
             conditions.append(
                 FieldCondition(
@@ -229,7 +258,18 @@ class EnhancedVectorDatabase:
                     match=MatchValue(value=str(document_id))
                 )
             )
-        
+
+        # Multi-tenant isolation. In server mode every search passes a
+        # session_id, so one visitor can never retrieve another's chunks even
+        # though all sessions share a single collection.
+        if session_id is not None:
+            conditions.append(
+                FieldCondition(
+                    key="session_id",
+                    match=MatchValue(value=str(session_id))
+                )
+            )
+
         if metadata_filter:
             for key, value in metadata_filter.items():
                 conditions.append(
@@ -379,7 +419,7 @@ class EnhancedVectorDatabase:
     
     def delete_document(self, document_id: UUID):
         logger.info(f"Deleting document {document_id}")
-        
+
         try:
             self.client.delete(
                 collection_name=self.collection_name,
@@ -393,9 +433,34 @@ class EnhancedVectorDatabase:
                 )
             )
             logger.info(f"Document {document_id} deleted successfully")
-            
+
         except Exception as e:
             logger.error(f"Deletion error: {str(e)}")
+            raise
+
+    def delete_session(self, session_id: str):
+        """Drop every chunk belonging to one session.
+
+        This is how the server reclaims space when a session expires. It
+        replaces the CLI's reset_collection(), which wipes the whole collection
+        and would destroy other visitors' documents.
+        """
+        logger.info(f"Deleting session {session_id}")
+
+        try:
+            self.client.delete(
+                collection_name=self.collection_name,
+                points_selector=Filter(
+                    must=[
+                        FieldCondition(
+                            key="session_id",
+                            match=MatchValue(value=str(session_id))
+                        )
+                    ]
+                )
+            )
+        except Exception as e:
+            logger.error(f"Session deletion error: {str(e)}")
             raise
     
     def hybrid_search(
@@ -405,29 +470,32 @@ class EnhancedVectorDatabase:
         sparse_vector: Dict[int, float] = None,
         limit: int = 50,
         dense_weight: float = 0.65,
-        sparse_weight: float = 0.35
+        sparse_weight: float = 0.35,
+        session_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
-        query_filter = self._build_filter(document_id)
+        query_filter = self._build_filter(document_id, session_id=session_id)
         results = self._hybrid_search(dense_vector, sparse_vector, query_filter, limit)
         return self._format_results(results)
-    
+
     def dense_search(
         self,
         document_id: Optional[UUID] = None,
         dense_vector: np.ndarray = None,
-        limit: int = 50
+        limit: int = 50,
+        session_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
-        query_filter = self._build_filter(document_id)
+        query_filter = self._build_filter(document_id, session_id=session_id)
         results = self._dense_search(dense_vector, query_filter, limit)
         return self._format_results(results)
-    
+
     def sparse_search(
         self,
         document_id: Optional[UUID] = None,
         sparse_vector: Dict[int, float] = None,
-        limit: int = 50
+        limit: int = 50,
+        session_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
-        query_filter = self._build_filter(document_id)
+        query_filter = self._build_filter(document_id, session_id=session_id)
         results = self._sparse_search(sparse_vector, query_filter, limit)
         return self._format_results(results)
     

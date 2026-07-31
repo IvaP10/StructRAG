@@ -1,15 +1,10 @@
 from pathlib import Path
-from uuid import uuid4
 import json
-import time
 from typing import List, Dict, Any
 import numpy as np
 import logging
 
-from pdf_parser import parser
-from chunker import chunker
 from embedder import embedder
-from database import vector_db
 from retriever import retriever
 from generator import generator
 import asyncio
@@ -100,7 +95,7 @@ class RAGEvaluator:
                     chunk = json.loads(chunk_str)
                     if chunk.get("type") == "token":
                         full_answer += chunk["content"]
-                except Exception:
+                except Exception:  # nosec B110 - one failed query should not abort the whole benchmark
                     pass
             return context_data, full_answer
 
