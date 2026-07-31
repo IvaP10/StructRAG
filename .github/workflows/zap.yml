@@ -34,7 +34,7 @@ jobs:
       issues: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Resolve target
         id: target
@@ -67,7 +67,7 @@ jobs:
           echo "::warning::Space did not respond in time; the scan may report little."
 
       - name: ZAP baseline
-        uses: zaproxy/action-baseline@v0.12.0
+        uses: zaproxy/action-baseline@v0.15.0
         with:
           target: ${{ steps.target.outputs.url }}
           # Rules to downgrade or ignore, with reasons. Kept in the repo so the
