@@ -5,7 +5,7 @@
 Please **do not open a public issue** for a security problem.
 
 Use GitHub's private reporting instead: go to the
-[Security tab](https://github.com/IvaP10/StructRAG/security/advisories/new) and
+[Security tab](https://github.com/AdonisYsh/StructRAG/security/advisories/new) and
 open a draft advisory. That keeps the details between us until there is a fix.
 
 Useful to include, if you have it:

@@ -176,6 +176,13 @@ ALLOWED_ORIGINS = [
     if o.strip()
 ]
 
+# Where the UI lives, for the signpost served at /. The host is not configured
+# again here — it is by definition an origin already in ALLOWED_ORIGINS, so it
+# is taken from there. Only the path needs stating, and only when the frontend
+# is not at the origin root: a GitHub Pages *project* site lives at /<repo>/.
+FRONTEND_PATH = "/" + os.getenv("FRONTEND_PATH", "").strip().strip("/")
+FRONTEND_URL = (ALLOWED_ORIGINS[0] + FRONTEND_PATH) if ALLOWED_ORIGINS else ""
+
 # ── Spend ceiling ─────────────────────────────────────────────────────────────
 # The single most important limit. Everything else is defence in depth; this is
 # what actually bounds the bill. Resets at UTC midnight.

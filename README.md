@@ -5,8 +5,8 @@
 
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-blue.svg)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![CodeQL](https://github.com/IvaP10/StructRAG/actions/workflows/codeql.yml/badge.svg)](https://github.com/IvaP10/StructRAG/actions/workflows/codeql.yml)
-[![Security scan](https://github.com/IvaP10/StructRAG/actions/workflows/security-scan.yml/badge.svg)](https://github.com/IvaP10/StructRAG/actions/workflows/security-scan.yml)
+[![CodeQL](https://github.com/AdonisYsh/StructRAG/actions/workflows/codeql.yml/badge.svg)](https://github.com/AdonisYsh/StructRAG/actions/workflows/codeql.yml)
+[![Security scan](https://github.com/AdonisYsh/StructRAG/actions/workflows/security-scan.yml/badge.svg)](https://github.com/AdonisYsh/StructRAG/actions/workflows/security-scan.yml)
 
 *Precision answer generation across complex financial and academic documents, backed by structured citations and high-fidelity multi-modal extraction.*
 
@@ -149,7 +149,7 @@ StructRAG/
 ## Running the CLI
 
 ```bash
-git clone https://github.com/IvaP10/StructRAG.git
+git clone https://github.com/AdonisYsh/StructRAG.git
 cd StructRAG
 
 python3.12 -m venv venv

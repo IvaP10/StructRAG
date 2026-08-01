@@ -37,7 +37,14 @@ services:
       # Origin only: no path, no trailing slash. CORS compares origins, so
       # anything else here silently rejects every browser request.
       - key: ALLOWED_ORIGINS
-        value: https://ivap10.github.io
+        value: https://adonisysh.github.io
+
+      # Path only — the host comes from ALLOWED_ORIGINS above rather than being
+      # written out a second time. Needed because this is a Pages *project*
+      # site, served from /<repo>/ rather than the origin root; without it the
+      # signpost at / would send a visitor to the profile page, not the app.
+      - key: FRONTEND_PATH
+        value: /StructRAG/
 
       # ── Bounds. DAILY_USD_CAP is the one that actually limits the bill ──────
       - key: DAILY_USD_CAP

@@ -292,14 +292,18 @@ def test_job_ids_are_not_readable_across_sessions(client, monkeypatch):
 # ── CORS ─────────────────────────────────────────────────────────────────────
 
 def test_allowed_origin_gets_cors_headers(client):
+    """Whatever ALLOWED_ORIGINS names must be echoed back. Read the configured
+    value rather than restating it, so this asserts the wiring and not a literal
+    that has to be updated whenever the frontend moves."""
+    origin = config.ALLOWED_ORIGINS[0]
     response = client.options(
         "/api/session",
         headers={
-            "Origin": "https://ivap10.github.io",
+            "Origin": origin,
             "Access-Control-Request-Method": "POST",
         },
     )
-    assert response.headers.get("access-control-allow-origin") == "https://ivap10.github.io"
+    assert response.headers.get("access-control-allow-origin") == origin
 
 
 def test_unknown_origin_is_not_granted_access(client):

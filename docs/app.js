@@ -12,7 +12,31 @@
 
 (function () {
   const CFG = window.STRUCTRAG_CONFIG || {};
-  const API = (CFG.API_BASE || "").replace(/\/+$/, "");
+
+  // The backend origin is read out of the page's own Content-Security-Policy
+  // rather than configured separately.
+  //
+  // connect-src is the one place the origin is forced to be a literal: the
+  // browser locks the policy while parsing the document, before any script
+  // runs, and a policy can never be relaxed afterwards. Since the CSP has to
+  // name the backend anyway, naming it a second time in config.js would only
+  // create two strings that must agree — and when they disagree the browser
+  // blocks every request with nothing but a console violation to show for it.
+  // Deriving one from the other makes that failure unrepresentable.
+  function apiBaseFromCSP() {
+    const meta = document.querySelector('meta[http-equiv="Content-Security-Policy"]');
+    if (!meta) return "";
+    const directive = meta.content.split(";")
+      .map((part) => part.trim())
+      .find((part) => part.startsWith("connect-src"));
+    if (!directive) return "";
+    // Skip the directive name; take the first entry that is an absolute origin.
+    // Keyword sources ('self', 'none') and wildcards are not fetchable bases.
+    return directive.split(/\s+/).slice(1)
+      .find((src) => /^https?:\/\//.test(src)) || "";
+  }
+
+  const API = apiBaseFromCSP().replace(/\/+$/, "");
   const POLL_MS = CFG.POLL_INTERVAL_MS || 1500;
   const UPLOAD_TIMEOUT_MS = CFG.UPLOAD_TIMEOUT_MS || 240000;
 
@@ -520,30 +544,14 @@
 
   // ── boot ──────────────────────────────────────────────────────────────────
 
-  // The backend origin is written in two places that cannot be derived from one
-  // another: API_BASE in config.js, and connect-src in the CSP meta tag. If they
-  // drift, the browser blocks every request before it leaves the page and the
-  // only trace is a console violation — the UI just sits there looking broken.
-  // Checking it here turns that into a message that names both files.
-  function cspAllows(origin) {
-    const meta = document.querySelector('meta[http-equiv="Content-Security-Policy"]');
-    if (!meta) return true;  // No meta CSP; a header may still apply. Do not guess.
-    const directive = meta.content.split(";")
-      .map((part) => part.trim())
-      .find((part) => part.startsWith("connect-src"));
-    if (!directive) return true;
-    return directive.split(/\s+/).slice(1).some((src) => src === origin || src === "*");
-  }
-
+  // API can only be empty if the CSP names no fetchable backend origin, in
+  // which case the browser would block every request anyway. There is no
+  // mismatch case left to check: the origin requests go to and the origin the
+  // policy permits are now the same string by construction.
   if (!API) {
     showError(ui.gateError,
-      "This page is not configured yet — set API_BASE in docs/config.js to your backend URL.");
-    ui.gateSubmit.disabled = true;
-  } else if (!cspAllows(new URL(API).origin)) {
-    showError(ui.gateError,
-      `Configuration mismatch: API_BASE is ${new URL(API).origin}, but the ` +
-      "Content-Security-Policy in index.html does not allow it. Update the " +
-      "connect-src entry to match, or the browser will block every request.");
+      "This page is not configured yet — set the connect-src origin in the " +
+      "Content-Security-Policy in docs/index.html to your backend URL.");
     ui.gateSubmit.disabled = true;
   } else if (token()) {
     // Resume an existing tab session; the server rejects the token if stale.

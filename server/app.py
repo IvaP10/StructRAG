@@ -245,7 +245,7 @@ async def root() -> Dict[str, Any]:
     """
     return {
         "service": "StructRAG API",
-        "frontend": "https://ivap10.github.io/StructRAG/",
+        "frontend": config.FRONTEND_URL,
         "health": "/api/health",
     }
 

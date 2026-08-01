@@ -13,7 +13,7 @@ import os
 os.environ.setdefault("OPENAI_API_KEY", "sk-test-not-a-real-key")
 os.environ.setdefault("INVITE_CODE", "test-invite-code-1234")
 os.environ.setdefault("SESSION_SECRET", "test-session-secret-value-32-chars")
-os.environ.setdefault("ALLOWED_ORIGINS", "https://ivap10.github.io")
+os.environ.setdefault("ALLOWED_ORIGINS", "https://frontend.test")
 os.environ.setdefault("DAILY_USD_CAP", "1.00")
 os.environ.setdefault("LOG_FILE", "")
 os.environ.setdefault("CACHE_DIR", "/tmp/structrag-test-cache")  # noqa: S108

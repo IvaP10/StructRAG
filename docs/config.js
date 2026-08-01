@@ -4,15 +4,12 @@
 // no API key, no invite code, and no other secret. Those live as environment
 // secrets on the backend.
 
-window.STRUCTRAG_CONFIG = {
-  // Must match the connect-src entry in index.html — app.js checks this at
-  // startup and says so loudly if the two drift. See DEPLOY.md.
-  //
-  // Hardcoded because it has to be: GitHub Pages serves docs/ straight from the
-  // branch with no build step, so there is nothing to substitute a variable at
-  // deploy time. It is a public URL, not a secret.
-  API_BASE: "https://structrag.onrender.com",
+// The backend URL is deliberately NOT here. It lives once, in the connect-src
+// entry of the Content-Security-Policy in index.html, which is the only place
+// it can be a variable-free literal — and app.js reads it back out of there.
+// Repeating it in this file would just be a second string to keep in sync.
 
+window.STRUCTRAG_CONFIG = {
   // How often to poll an upload's progress, in milliseconds.
   POLL_INTERVAL_MS: 1500,
 

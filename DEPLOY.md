@@ -67,7 +67,8 @@ understanding. Change them in **Settings → Environment**.
 | `OPENAI_API_KEY` | *prompted* | Your key. The only genuinely secret value here |
 | `INVITE_CODE` | *prompted* | The passphrase you hand out. 8 chars minimum, longer is better |
 | `SESSION_SECRET` | *generated* | Signs session tokens. Regenerating it logs everyone out |
-| `ALLOWED_ORIGINS` | `https://ivap10.github.io` | Origin only — no path, no trailing slash |
+| `ALLOWED_ORIGINS` | `https://adonisysh.github.io` | Origin only — no path, no trailing slash |
+| `FRONTEND_PATH` | `/StructRAG/` | Path only, for the signpost at `/`. The host is taken from `ALLOWED_ORIGINS`. Needed because a Pages project site is not at the origin root |
 | `DAILY_USD_CAP` | `0.70` | Hard stop. ~$21/month. **The limit that actually bounds your bill** |
 | `MAX_QUERIES_PER_HOUR` | `60` | Per session |
 | `MAX_UPLOADS_PER_DAY` | `10` | Per session |
@@ -96,34 +97,35 @@ curl https://structrag.onrender.com/api/health
 
 ## 3. Point the frontend at it
 
-Two files, and **both** must match or the browser silently blocks every call:
+**One line, in [docs/index.html](docs/index.html)** — the `connect-src` entry of
+the CSP meta tag:
 
-**`docs/config.js`**
-```js
-API_BASE: "https://structrag.onrender.com",
-```
-
-**`docs/index.html`** — the `connect-src` line in the CSP meta tag:
 ```
 connect-src https://structrag.onrender.com;
 ```
 
-The URL is written out in both places because it has to be. Pages serves `docs/`
-straight from the branch with no build step, so there is nothing to substitute a
-variable at deploy time; and a Content Security Policy cannot be relaxed by
-JavaScript at runtime, so the origin must be a literal in the markup. It is a
-public URL, not a secret — the duplication is the only cost.
+That is the whole change. `app.js` reads the origin back out of this tag at
+startup, so there is nothing else to keep in step.
 
-`app.js` compares the two at startup and shows a visible error if they drift,
-because otherwise the page just looks dead with nothing but a CSP violation in
-the console.
+The URL is a literal here because it cannot be anything else. A Content Security
+Policy is locked by the browser while it parses the document — before any script
+runs — and can never be relaxed afterwards, so the origin has to be present in
+the markup as shipped. Pages also serves `docs/` straight from the branch with no
+build step, so nothing can substitute a variable at deploy time. It is a public
+URL, not a secret.
+
+What the frontend deliberately does *not* do is name that origin a second time in
+`config.js`. Two strings that must agree is a bug waiting to happen, and the
+failure mode is nasty: the browser blocks every request before it leaves the page
+and the only trace is a console violation, so the UI just sits there looking
+dead. Deriving one from the other removes the possibility.
 
 ## 4. Turn on GitHub Pages
 
 **Settings → Pages** → Source: *Deploy from a branch* → Branch `main`, folder
 `/docs` → Save.
 
-Live at `https://ivap10.github.io/StructRAG/` within a minute or two. No build
+Live at `https://adonisysh.github.io/StructRAG/` within a minute or two. No build
 step, no workflow.
 
 Whatever origin this lands on must equal `ALLOWED_ORIGINS` on Render exactly.
@@ -244,9 +246,13 @@ instance's 512 MB.
 
 ### The page loads but nothing happens
 
-Almost always the CSP. `app.js` should catch a mismatch and say so on the page;
-if it does not, check `connect-src` in `docs/index.html` matches `API_BASE` in
-`docs/config.js`, exactly, including scheme.
+Almost always the CSP. Check the `connect-src` entry in `docs/index.html` — it is
+both the policy and the address the frontend calls, so a typo there takes out
+every request at once. It must be scheme + host with no path and no trailing
+slash, and it must equal `ALLOWED_ORIGINS` on Render.
+
+If the gate shows "this page is not configured yet", `connect-src` names no
+`https://` origin at all.
 
 ### Something is being abused right now
 

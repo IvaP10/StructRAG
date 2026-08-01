@@ -7,14 +7,14 @@
 <meta name="description" content="Hybrid retrieval-augmented generation over structurally dense PDFs, with grounded citations and confidence scoring.">
 
 <!-- No inline scripts and no external hosts, so document text can never execute
-     as code. connect-src must match API_BASE in config.js — see DEPLOY.md.
+     as code.
 
-     The backend origin is spelled out here rather than read from config.js
-     because a CSP cannot be built at runtime: the browser locks this policy
-     while parsing the document, before any script runs, and a policy can never
-     be relaxed afterwards. app.js compares the two at startup and shows a
-     visible error if they drift, since the failure mode is otherwise a silently
-     dead page. -->
+     The connect-src origin below is the SINGLE place the backend URL is
+     written. It has to be a literal here: a CSP cannot be built at runtime,
+     because the browser locks this policy while parsing the document, before
+     any script runs, and a policy can never be relaxed afterwards. So rather
+     than configure the same URL again elsewhere, app.js reads it back out of
+     this tag. Changing hosts means editing this one line. See DEPLOY.md. -->
 <meta http-equiv="Content-Security-Policy"
       content="default-src 'none';
                script-src 'self';
@@ -107,7 +107,7 @@
 </div>
 
 <footer class="footer">
-  <a href="https://github.com/IvaP10/StructRAG">Source on GitHub</a>
+  <a href="https://github.com/AdonisYsh/StructRAG">Source on GitHub</a>
   <span class="dim">·</span>
   <span class="dim">Answers are generated and may be wrong — check the cited pages.</span>
 </footer>
