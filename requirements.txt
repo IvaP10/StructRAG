@@ -11,7 +11,7 @@
 # BM25-style tokeniser, so nothing imports it any more.
 
 # ── Core pipeline ─────────────────────────────────────────────────────────────
-pydantic>=2.7
+pydantic>=2.13.4
 tiktoken>=0.7
 numpy>=1.26
 python-dotenv>=1.0
