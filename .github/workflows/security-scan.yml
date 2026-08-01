@@ -1,0 +1,272 @@
+# All scanning except CodeQL and ZAP, in one workflow with a job per tool.
+#
+# CodeQL lives in its own file because it needs a language matrix and its own
+# init/analyze pair. ZAP lives in its own file because it attacks the deployed
+# API on a different schedule. Everything else runs here.
+#
+# Gitleaks, Semgrep and Bandit report as code scanning alerts in the Security
+# tab. Trivy and pip-audit report into the run summary instead — Trivy because a
+# Debian-based image carries hundreds of base-layer CVEs that would drown the
+# actionable findings, pip-audit because it has no SARIF output format.
+# Nothing here opens a pull request.
+#
+# On "OWASP": OWASP Dependency-Check targets Java and .NET and finds essentially
+# nothing in a Python project. Real OWASP coverage for this stack is Semgrep's
+# p/owasp-top-ten ruleset (below) plus OWASP ZAP at runtime (zap.yml), with
+# pip-audit handling Python dependency CVEs properly.
+
+name: Security scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Daily. The code is static but the CVE databases are not, so an image that
+    # was clean yesterday can be vulnerable today.
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-scan-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Secrets ────────────────────────────────────────────────────────────────
+  gitleaks:
+    name: Secrets (full history)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      security-events: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # Every commit, not just the tip. Deleting a committed key in a later
+          # commit does not remove it — it stays reachable forever, and anyone
+          # who already cloned has it.
+          fetch-depth: 0
+
+      - name: Scan history
+        # --redact keeps the secret itself out of the SARIF and the build log,
+        # so this output is safe to read on a public repo.
+        run: |
+          docker run --rm -v "${PWD}:/repo" zricethezav/gitleaks:latest \
+            detect --source=/repo \
+                   --report-format=sarif \
+                   --report-path=/repo/gitleaks.sarif \
+                   --redact \
+                   --exit-code 0
+
+      - name: Upload results
+        if: always()
+        uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        with:
+          sarif_file: gitleaks.sarif
+          category: gitleaks
+
+      - name: Fail if a secret was found
+        if: always()
+        run: |
+          count=$(python3 -c "
+          import json
+          try:
+              with open('gitleaks.sarif') as fh:
+                  print(sum(len(r.get('results', [])) for r in json.load(fh).get('runs', [])))
+          except FileNotFoundError:
+              print(0)
+          ")
+          echo "Findings: $count"
+          if [ "$count" -gt 0 ]; then
+            echo "::error::Gitleaks found $count potential secret(s). See the Security tab."
+            echo "Treat a committed secret as compromised: rotate the key FIRST, then rewrite"
+            echo "history. Deleting it in a new commit accomplishes nothing on its own."
+            exit 1
+          fi
+
+  # ── Dependencies and container ─────────────────────────────────────────────
+  trivy:
+    name: Dependency and image CVEs
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Scan the source tree
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          format: table
+          output: trivy-fs.txt
+          severity: CRITICAL,HIGH,MEDIUM
+          # Report without failing. A CVE in a transitive dependency should not
+          # block a docs commit; the run summary and the triage agent handle it.
+          exit-code: "0"
+
+      - name: Build the image
+        run: docker build -t structrag:scan .
+
+      - name: Scan the image
+        # Matters more than the source scan: most CVEs in a Python container come
+        # from the Debian base layer, which requirements.txt says nothing about,
+        # and on Render the image is what actually ships.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: structrag:scan
+          scanners: vuln,secret
+          format: table
+          output: trivy-image.txt
+          severity: CRITICAL,HIGH,MEDIUM
+          exit-code: "0"
+
+      - name: Report into the run summary
+        if: always()
+        # Deliberately not the Security tab. A Debian-based Python image carries
+        # a couple of hundred base-layer CVEs that no change to this repo can
+        # fix, and as code scanning alerts they bury the handful of findings
+        # that are actually actionable. Still scanned, still readable per run,
+        # just not competing with CodeQL for attention.
+        run: |
+          {
+            for report in trivy-fs trivy-image; do
+              echo "## ${report}"
+              echo
+              echo '```'
+              cat "${report}.txt" 2>/dev/null || echo "(no output — the scan step did not run)"
+              echo '```'
+              echo
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the full reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: trivy-reports
+          path: trivy-*.txt
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Fail only on a secret baked into the image
+        # Different in kind from a CVE: a secret in a layer is compromised the
+        # moment it ships, and removing it in a later layer does not erase it.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: structrag:scan
+          scanners: secret
+          format: table
+          exit-code: "1"
+
+  # ── Static analysis ────────────────────────────────────────────────────────
+  sast:
+    name: OWASP Top 10, Bandit, pip-audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      security-events: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install semgrep "bandit[toml,sarif]" pip-audit
+
+      - name: Semgrep (OWASP Top 10)
+        run: |
+          semgrep scan \
+            --config=p/owasp-top-ten \
+            --config=p/python \
+            --config=p/secrets \
+            --sarif --output=semgrep.sarif \
+            --metrics=off --no-error .
+
+      - name: Upload Semgrep results
+        if: always()
+        uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+      - name: Bandit
+        # always(): each scanner is independent, so one failing must not skip the
+        # rest of the job and leave their uploads looking for a file that was
+        # never written.
+        if: always()
+        # Config comes from pyproject.toml, so pre-commit locally and CI here see
+        # exactly the same findings and exclusions.
+        run: bandit -c pyproject.toml -r . --format sarif --output bandit.sarif --exit-zero
+
+      - name: Upload Bandit results
+        if: always()
+        uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        with:
+          sarif_file: bandit.sarif
+          category: bandit
+
+      - name: pip-audit
+        if: always()
+        # pip-audit has no SARIF output format, so this one reports into the job
+        # summary rather than the Security tab. Python dependency CVEs still
+        # reach the Security tab through Trivy's filesystem scan above; this is
+        # a second opinion from a different advisory database.
+        #
+        # Only requirements.txt. The OCR and eval extras are not installed in the
+        # image or on the server, so a CVE in torch is not part of the deployed
+        # attack surface and would only be noise.
+        run: |
+          {
+            echo "## pip-audit"
+            echo
+            pip-audit --requirement requirements.txt \
+                      --format markdown \
+                      --progress-spinner=off \
+              || echo "_pip-audit reported findings or could not resolve; see the step log._"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ── Tests and lint ─────────────────────────────────────────────────────────
+  tests:
+    name: Tests and lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - run: ruff check .
+
+      - name: Run tests
+        # Obvious placeholders. Every test that would touch OpenAI is stubbed, so
+        # no real key is needed and a full run costs nothing.
+        env:
+          OPENAI_API_KEY: sk-test-not-a-real-key
+          INVITE_CODE: test-invite-code-1234
+          SESSION_SECRET: test-session-secret-value-32-chars
+          LOG_FILE: ""
+        run: pytest -q --no-header

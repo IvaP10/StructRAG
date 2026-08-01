@@ -1,0 +1,57 @@
+# Render blueprint — the deployed backend.
+#
+# Render builds the Dockerfile in this repo and runs the resulting image, so the
+# hardened container is what actually ships: non-root user, root-owned read-only
+# application directory, writes confined to /data. Nothing here duplicates the
+# image; this file only says how to run it and what to put in its environment.
+#
+# Create it with: Render dashboard -> New -> Blueprint -> point at this repo.
+# The two `sync: false` values are prompted for once and stored by Render; they
+# never enter git. See DEPLOY.md.
+
+services:
+  - name: structrag
+    type: web
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./Dockerfile
+
+    # The one endpoint the kill switch leaves reachable. Pointing the health
+    # check at anything else would make a deliberately DISABLED service look
+    # crashed and get restarted in a loop.
+    healthCheckPath: /api/health
+
+    envVars:
+      # ── Required. The app refuses to start without these (server/app.py) ────
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: INVITE_CODE
+        sync: false
+      # Render generates a random 256-bit value. Regenerating it invalidates
+      # every issued session token, which is the intended way to boot everyone.
+      - key: SESSION_SECRET
+        generateValue: true
+
+      # ── Where the frontend is served from ──────────────────────────────────
+      # Origin only: no path, no trailing slash. CORS compares origins, so
+      # anything else here silently rejects every browser request.
+      - key: ALLOWED_ORIGINS
+        value: https://ivap10.github.io
+
+      # ── Bounds. DAILY_USD_CAP is the one that actually limits the bill ──────
+      - key: DAILY_USD_CAP
+        value: "0.70"
+      - key: MAX_QUERIES_PER_HOUR
+        value: "60"
+      - key: MAX_UPLOADS_PER_DAY
+        value: "10"
+      - key: MAX_PDF_PAGES
+        value: "50"
+      - key: RELEVANCE_FLOOR
+        value: "0.28"
+
+      # Flip to "1" in the Render dashboard to make every endpoint 503 within
+      # seconds. No redeploy, no code change — the abuse kill switch.
+      - key: DISABLED
+        value: "0"

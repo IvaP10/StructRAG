@@ -1,0 +1,27 @@
+# ZAP baseline rule overrides.
+#
+# Format: RULE_ID<TAB>ACTION<TAB>comment
+# Actions: WARN (report, do not fail) | IGNORE (suppress) | FAIL
+#
+# Kept in the repo so every suppression carries a reason and can be reviewed,
+# rather than being clicked away in a UI where nobody can see it later.
+#
+# Only suppress a rule when it does not apply to this architecture. If you are
+# unsure, leave it as WARN and let the triage agent judge whether it is real.
+
+10015	IGNORE	Missing Cache-Control on API responses. The API sets no-cache on the SSE stream; other endpoints return non-sensitive JSON.
+10021	IGNORE	Missing X-Content-Type-Options. Set by security_headers middleware in server/app.py; ZAP also flags it on 404s that never reach the middleware chain.
+10035	IGNORE	HSTS not set. TLS is terminated by the host's edge; the application container never sees HTTPS and cannot set this header meaningfully.
+10038	IGNORE	CSP header on API responses. The API returns only JSON and SSE, and does set a restrictive CSP; the page CSP lives in docs/index.html.
+10063	WARN	Permissions-Policy. Worth adding, but absent headers on a JSON API are low impact.
+10096	IGNORE	Timestamp disclosure. The health endpoint and job status intentionally report elapsed times.
+10109	WARN	Modern web application detection. Informational only.
+90005	WARN	Sec-Fetch headers. Informational; CORS is enforced server-side by an explicit origin allowlist.
+
+# Deliberately NOT suppressed — these would be real problems here:
+#   40012 / 40014 / 40016 / 40017  Cross-site scripting
+#   40018                          SQL injection
+#   40003                          CRLF injection
+#   10202                          Missing anti-CSRF tokens
+#   10098                          Cross-domain misconfiguration (would mean the CORS allowlist regressed)
+#   90022                          Application error disclosure (would mean stack traces are leaking)

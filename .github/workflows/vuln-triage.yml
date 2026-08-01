@@ -1,0 +1,99 @@
+# Automated vulnerability triage, every two days.
+#
+# Reads open code scanning alerts, works out which are genuinely exploitable in
+# this application, proves it by writing and running a test, and files one issue
+# per confirmed finding explaining what, why, and how to fix it.
+#
+# It does not open pull requests and cannot touch main. Fixing requires you to
+# add the `approved-fix` label, which triggers vuln-fix-apply.yml.
+#
+# Required secret:  OPENAI_API_KEY
+# Optional variable: TRIAGE_ASSIGNEE (your username, to be assigned each issue)
+
+name: Vulnerability triage
+
+on:
+  schedule:
+    # 06:12 UTC on even days. The offset minute avoids GitHub's top-of-hour
+    # scheduling queue.
+    - cron: "12 6 2-30/2 * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Analyse and print to the log without filing issues"
+        type: boolean
+        default: false
+      limit:
+        description: "Maximum alerts to analyse"
+        type: string
+        default: "8"
+
+# Default to nothing; each job opts in below.
+permissions: {}
+
+concurrency:
+  # Never two triage runs at once — they would file duplicate issues.
+  group: vuln-triage
+  cancel-in-progress: false
+
+jobs:
+  triage:
+    name: Triage open alerts
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      # Enough to read alerts and file issues, nothing more. No
+      # `pull-requests: write`, so this job cannot open a PR.
+      security-events: read
+      contents: read
+      issues: write
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        # Full runtime stack: a reproduction test may import any module.
+        run: |
+          pip install -r requirements.txt -r requirements-dev.txt
+          pip install openai
+
+      - name: Run triage
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          TRIAGE_MODEL: ${{ vars.TRIAGE_MODEL || 'gpt-4o' }}
+          TRIAGE_ASSIGNEE: ${{ vars.TRIAGE_ASSIGNEE }}
+          MAX_ALERTS_PER_RUN: ${{ inputs.limit || '8' }}
+          # Both through env rather than interpolated into the script body: a
+          # ${{ }} inside run: is substituted before the shell parses the line.
+          DRY_RUN: ${{ inputs.dry_run }}
+          # Placeholders so importing application modules works. The reproduction
+          # tests are required to be offline and self-contained, so no real
+          # credentials are needed and none are provided.
+          INVITE_CODE: test-invite-code-1234
+          SESSION_SECRET: test-session-secret-value-32-chars
+          LOG_FILE: ""
+        run: |
+          if [ "${DRY_RUN}" = "true" ]; then
+            set -- --dry-run
+          fi
+          python -m security.triage_agent "$@" --limit "${MAX_ALERTS_PER_RUN}"
+
+      - name: Preserve generated reproduction tests
+        # An artifact, not a commit: agent-written tests only enter the repo
+        # through the approved fix PR.
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: reproduction-tests
+          path: tests/security/
+          if-no-files-found: ignore
+          retention-days: 30

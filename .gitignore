@@ -1,0 +1,51 @@
+# ── Secrets ───────────────────────────────────────────────────────────────────
+# config.py loads key.env — never commit it. key.env.example is the template.
+key.env
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ── Runtime artifacts ─────────────────────────────────────────────────────────
+.cache/
+rag_system.log
+*.log
+qdrant_storage/
+uploads/
+*.npy
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# ── Testing / tooling ─────────────────────────────────────────────────────────
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# ── Evaluation output ─────────────────────────────────────────────────────────
+*evaluation_results*.csv
+
+# ── Editors / OS ──────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Agent scratch ─────────────────────────────────────────────────────────────
+.claude/
